@@ -3,27 +3,24 @@ import { CHORD_LAB } from '../data/chords.js';
 import ChordCard from '../components/ChordCard.jsx';
 import { LabelToolbar } from './Unit.jsx';
 import { useStore } from '../lib/store.js';
-import { startBacking, stopBacking, setBpm, setMix, setDrumKit } from '../lib/audio.js';
-import { CHORD_INDEX } from '../lib/theory.js';
+import { startBacking, stopBacking, setBpm, setMix, setMixVolume, resetMixVolume, setDrumKit, MIX_TRACKS } from '../lib/audio.js';
+import { CHORD_BY_ID } from '../lib/theory.js';
 import { IconPlay, IconStop } from '../components/Icons.jsx';
 
 const PROGS = CHORD_LAB.progressions;
 const STYLES = CHORD_LAB.drumPatterns;
-const TRACKS = [
-  { id: 'drums', name: '鼓' },
-  { id: 'bass', name: '貝斯' },
-  { id: 'pad', name: '鋪底' },
-  { id: 'guitar', name: '吉他示範' },
-  { id: 'click', name: '節拍器' },
-];
+const CATS = CHORD_LAB.progressionCats.filter((c) => PROGS.some((p) => p.cat === c.id));
+const countIn = (cat) => PROGS.filter((p) => p.cat === cat).length;
 
 export default function Backing({ id }) {
   const s = useStore();
   const [selected, setSelected] = useState(PROGS.find((p) => p.id === id)?.id || PROGS[0].id);
   const prog = PROGS.find((p) => p.id === selected);
+  const [cat, setCat] = useState(prog.cat);
   const [style, setStyle] = useState(prog.style);
   const playing = s.backingId === prog.id;
-  const bars = prog.bars.map((cid) => CHORD_INDEX[cid]);
+  const bars = prog.bars.map((cid) => CHORD_BY_ID[cid]);
+  const shown = cat === 'all' ? PROGS : PROGS.filter((p) => p.cat === cat);
   const barIdx = playing ? s.backingBar : -1;
   const current = bars[barIdx >= 0 ? barIdx : 0];
   const nextIdx = ((barIdx >= 0 ? barIdx : 0) + 1) % bars.length;
@@ -35,7 +32,10 @@ export default function Backing({ id }) {
   }
 
   useEffect(() => {
-    if (id && PROGS.some((p) => p.id === id)) pick(id);
+    if (id && PROGS.some((p) => p.id === id)) {
+      pick(id);
+      setCat(PROGS.find((p) => p.id === id).cat);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
   useEffect(() => {
@@ -51,6 +51,10 @@ export default function Backing({ id }) {
     setBpm(p.bpm);
     if (s.backingId) startBacking(p, p.style);
   }
+  function pickRandom() {
+    const pool = shown.filter((p) => p.id !== selected);
+    if (pool.length) pick(pool[Math.floor(Math.random() * pool.length)].id);
+  }
   function changeStyle(v) {
     setStyle(v);
     if (playing) startBacking(prog, v);
@@ -63,20 +67,37 @@ export default function Backing({ id }) {
       <header className="unit-head">
         <p className="eyebrow">Backing Tracks</p>
         <h1>配樂練習</h1>
-        <p className="lead">選一段和弦進行,鼓、貝斯與鋪底會循環播放,你負責吉他。</p>
+        <p className="lead">{PROGS.length} 段和弦進行、{Object.keys(STYLES).length} 種節奏。選一段,鼓、貝斯與鋪底會循環播放,你負責吉他。</p>
       </header>
 
-      <div className="track-list" role="group" aria-label="選擇配樂">
-        {PROGS.map((p) => (
-          <button key={p.id} className={`track${selected === p.id ? ' is-on' : ''}`} aria-pressed={selected === p.id} onClick={() => pick(p.id)}>
-            <strong>{p.name}</strong>
-            <span>{p.desc}</span>
-            <small>{STYLES[p.style]?.name} · {p.bpm} BPM</small>
+      <section className="track-picker">
+        <div className="cat-row" role="group" aria-label="配樂分類">
+          {CATS.map((c) => (
+            <button key={c.id} className={`chip${cat === c.id ? ' is-on' : ''}`} aria-pressed={cat === c.id} onClick={() => setCat(c.id)}>
+              {c.name}<small>{countIn(c.id)}</small>
+            </button>
+          ))}
+          <button className={`chip${cat === 'all' ? ' is-on' : ''}`} aria-pressed={cat === 'all'} onClick={() => setCat('all')}>
+            全部<small>{PROGS.length}</small>
           </button>
-        ))}
-      </div>
+          <button className="chip chip-action" onClick={pickRandom}>隨機選一段</button>
+        </div>
+        <div className="track-list" role="group" aria-label="選擇配樂">
+          {shown.map((p) => (
+            <button key={p.id} className={`track${selected === p.id ? ' is-on' : ''}`} aria-pressed={selected === p.id} onClick={() => pick(p.id)}>
+              <strong>{p.name}</strong>
+              <span>{p.desc}</span>
+              <small>{STYLES[p.style]?.name} · {p.bpm} BPM</small>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="panel player">
+        <div className="player-title">
+          <h2>{prog.name}</h2>
+          <p>{prog.desc}</p>
+        </div>
         <div className="player-main">
           <button className={`btn btn-primary btn-lg${playing ? ' is-on' : ''}`} onClick={() => (playing ? stopBacking() : startBacking(prog, style))}>
             {playing ? <IconStop /> : <IconPlay />}
@@ -101,13 +122,22 @@ export default function Backing({ id }) {
             </select>
           </label>
         </div>
-        <div className="mix" role="group" aria-label="音軌開關">
-          {TRACKS.map((t) => (
-            <label key={t.id} className={`toggle${s.mix[t.id] ? ' is-on' : ''}`}>
-              <input type="checkbox" checked={!!s.mix[t.id]} onChange={(e) => setMix({ [t.id]: e.target.checked })} />
-              {t.name}
-            </label>
-          ))}
+        <div className="mixer" role="group" aria-label="混音:各音軌的開關與音量">
+          {MIX_TRACKS.map((t) => {
+            const on = !!s.mix[t.id];
+            const vol = Math.round((s.mixVol[t.id] ?? 0.7) * 100);
+            return (
+              <div key={t.id} className={`mixer-row${on ? '' : ' is-off'}`}>
+                <label className={`toggle${on ? ' is-on' : ''}`}>
+                  <input type="checkbox" checked={on} onChange={(e) => setMix({ [t.id]: e.target.checked })} />
+                  {t.name}
+                </label>
+                <input type="range" min="0" max="100" step="1" value={vol} aria-label={`${t.name}音量`} onChange={(e) => setMixVolume({ [t.id]: Number(e.target.value) / 100 })} />
+                <output>{vol}%</output>
+              </div>
+            );
+          })}
+          <button className="btn btn-ghost mixer-reset" onClick={resetMixVolume}>音量還原</button>
         </div>
         {kitNote && <p className="hint">{kitNote}</p>}
 
@@ -143,10 +173,10 @@ export default function Backing({ id }) {
         <ol className="steps">
           <li><b>先慢。</b>把速度降到原本的七成,確定每次換和弦都在第一拍到位。</li>
           <li><b>換彈法。</b>同一段進行,第一輪刷弦,第二輪分解,第三輪只彈上三弦。</li>
-          <li><b>關掉鋪底。</b>只留鼓和貝斯,這時候和弦的顏色完全靠你。</li>
+          <li><b>調整混音。</b>點音軌名稱可以開關,拉桿調各自的音量。關掉鋪底只留鼓和貝斯,和弦的顏色就完全靠你。</li>
           <li><b>開「吉他示範」對答案。</b>不確定自己按得對不對時,打開來聽聽看是不是同一個聲音。</li>
         </ol>
-        <p className="hint">想加自己的進行:打開 <code>src/data/chords.js</code>,在 <code>progressions</code> 裡照格式新增一筆就會出現在這裡。</p>
+        <p className="hint">想加自己的進行:打開 <code>src/data/chords.js</code>,在 <code>progressions</code> 裡照格式新增一筆就會出現在這裡;常見和弦在同一個檔案的 <code>library</code>。</p>
       </section>
     </div>
   );

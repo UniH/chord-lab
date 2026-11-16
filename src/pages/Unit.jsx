@@ -14,7 +14,7 @@ export function LabelToolbar({ showPlayMode = true }) {
         label="和弦圖標示"
         value={labelMode}
         onChange={(v) => setState({ labelMode: v })}
-        options={[{ value: 'finger', label: '指法' }, { value: 'note', label: '音名' }, { value: 'degree', label: '級數' }]}
+        options={[{ value: 'note', label: '音名' }, { value: 'finger', label: '指法' }, { value: 'degree', label: '級數' }]}
       />
       {showPlayMode && (
         <Segmented

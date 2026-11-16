@@ -1,4 +1,4 @@
-// 和弦圖:用 svguitar 畫,圓點文字可切換 指法 / 音名 / 級數,根音用粉紅色
+// 和弦圖:用 svguitar 畫,圓點文字可切換 音名 / 指法 / 級數(預設音名),根音用粉紅色
 import { useEffect, useRef } from 'react';
 import { SVGuitarChord } from 'svguitar';
 import { analyzeChord, pretty } from '../lib/theory.js';
@@ -12,7 +12,7 @@ export const COLORS = {
   ink: '#120e22',
 };
 
-export default function ChordDiagram({ chord, labelMode = 'finger' }) {
+export default function ChordDiagram({ chord, labelMode = 'note' }) {
   const ref = useRef(null);
 
   useEffect(() => {

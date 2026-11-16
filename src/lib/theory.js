@@ -86,11 +86,18 @@ export function analyzeChord(chord) {
   return { strings, position, span, barres, midis: strings.filter((s) => s.fret !== null).map((s) => s.midi) };
 }
 
-/** 所有和弦的 id → 和弦資料(配樂用) */
+/** 四個單元裡所有和弦的 id → 和弦資料 */
 export const CHORD_INDEX = (() => {
   const map = {};
   for (const unit of CHORD_LAB.units)
     for (const sec of unit.sections) for (const c of sec.chords || []) map[c.id] = c;
+  return map;
+})();
+
+/** 配樂用:單元的和弦 + 和弦庫(library) */
+export const CHORD_BY_ID = (() => {
+  const map = { ...CHORD_INDEX };
+  for (const c of CHORD_LAB.library || []) map[c.id] = c;
   return map;
 })();
 

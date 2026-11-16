@@ -2,11 +2,13 @@
 import { useSyncExternalStore } from 'react';
 
 const PREF_KEY = 'chordlab.prefs.v1';
+const PREFS_VERSION = 2;
 const PERSISTED = [
-  'bpm', 'timeSig', 'voice', 'reverb', 'chorus', 'fuzz', 'volume',
+  'prefsVersion', 'bpm', 'timeSig', 'voice', 'reverb', 'chorus', 'fuzz', 'volume',
   'droneString', 'droneFifth', 'droneLow', 'droneVolume', 'droneMode',
-  'labelMode', 'playMode', 'mix', 'drumKit',
+  'labelMode', 'playMode', 'mix', 'mixVol', 'drumKit',
 ];
+export const MIX_DEFAULT = 0.7; // 推桿在 70% 時是原本的音量
 
 function read(key, fallback) {
   try {
@@ -24,8 +26,18 @@ function write(key, value) {
   }
 }
 
+/** 讀回存過的偏好。第 2 版起和弦圖預設顯示音名,舊版存下來的「指法」預設值要跟著換 */
+function readPrefs() {
+  const saved = read(PREF_KEY, {});
+  if ((saved.prefsVersion || 1) < 2 && saved.labelMode === 'finger') delete saved.labelMode;
+  saved.prefsVersion = PREFS_VERSION;
+  return saved;
+}
+const savedPrefs = readPrefs();
+
 let state = {
   // 偏好
+  prefsVersion: PREFS_VERSION,
   bpm: 90,
   timeSig: '4/4',
   voice: 'clean',
@@ -38,11 +50,13 @@ let state = {
   droneLow: false,
   droneVolume: 0.5,
   droneMode: 'major',
-  labelMode: 'finger', // finger | note | degree
+  labelMode: 'note', // note | finger | degree
   playMode: 'strum', // strum | arp
-  mix: { drums: true, bass: true, pad: true, guitar: false, click: false },
+  mix: { drums: true, bass: true, pad: true, guitar: false, click: false }, // 各音軌的開關
   drumKit: 'sampled',
-  ...read(PREF_KEY, {}),
+  ...savedPrefs,
+  // 各音軌的音量(0–1),舊紀錄裡沒有的音軌補上預設值
+  mixVol: { drums: MIX_DEFAULT, bass: MIX_DEFAULT, pad: MIX_DEFAULT, guitar: MIX_DEFAULT, click: MIX_DEFAULT, ...(savedPrefs.mixVol || {}) },
   // 執行期狀態(不儲存)
   audioReady: false,
   voiceStatus: 'idle', // idle | loading | ready | failed

@@ -22,6 +22,14 @@ function useHashRoute() {
   return route;
 }
 
+function safeDecode(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
 const NAV = [
   { to: '', label: '課表' },
   ...CHORD_LAB.units.map((u) => ({ to: `unit/${u.id}`, label: u.title, no: u.no })),
@@ -33,13 +41,14 @@ const NAV = [
 
 export default function App() {
   const route = useHashRoute();
-  const [head, arg] = route.split('/');
+  const [head, ...restParts] = route.split('/');
+  const arg = restParts.join('/');
   let page;
   if (head === 'unit') page = <Unit key={arg} id={arg} />;
   else if (head === 'drone') page = <DronePage />;
   else if (head === 'backing') page = <Backing id={arg} />;
   else if (head === 'quiz') page = <Quiz />;
-  else if (head === 'chords') page = <ChordBook />;
+  else if (head === 'chords') page = <ChordBook name={safeDecode(arg)} />;
   else page = <Home />;
 
   const activeTo = head === 'unit' ? `unit/${arg}` : head || '';

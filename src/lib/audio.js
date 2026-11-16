@@ -3,8 +3,8 @@ import * as Tone from 'tone';
 import { Soundfont, DrumMachine, CacheStorage } from 'smplr';
 import { Note } from 'tonal';
 import { CHORD_LAB } from '../data/chords.js';
-import { analyzeChord, CHORD_INDEX, TUNING_MIDI, plain } from './theory.js';
-import { getState, setState } from './store.js';
+import { analyzeChord, CHORD_BY_ID, TUNING_MIDI, plain } from './theory.js';
+import { getState, setState, MIX_DEFAULT } from './store.js';
 
 export const VOICES = [
   { id: 'clean', name: '乾淨電吉他(取樣)', instrument: 'electric_guitar_clean' },
@@ -19,6 +19,23 @@ export const TIME_SIGS = {
   '3/4': { steps: 12, beatEvery: 4, accents: [] },
   '6/8': { steps: 12, beatEvery: 2, accents: [6] },
 };
+
+/** 配樂的音軌(混音器的順序) */
+export const MIX_TRACKS = [
+  { id: 'drums', name: '鼓' },
+  { id: 'bass', name: '貝斯' },
+  { id: 'pad', name: '鋪底' },
+  { id: 'guitar', name: '吉他示範' },
+  { id: 'click', name: '節拍器' },
+];
+/** 推桿位置(0–1)→ 音量倍率。70% 是原本的音量,100% 約大一倍,曲線取平方讓小音量比較好調 */
+const mixLevel = (id) => {
+  const v = getState().mixVol?.[id];
+  return ((typeof v === 'number' ? v : MIX_DEFAULT) / MIX_DEFAULT) ** 2;
+};
+/** 取樣樂器用力度控制音量時用(力度到音量本身就是平方關係) */
+const mixVelocity = (id) => Math.sqrt(mixLevel(id));
+const BASE_GAIN = { drums: 0.8, bass: 0.9, pad: 1, click: 1 };
 
 let E = null; // 所有音訊節點
 let booting = null;
@@ -79,7 +96,8 @@ async function boot() {
   // 鋪底 Pad
   const padGain = new Tone.Gain(0.5).connect(master);
   const padSend = new Tone.Gain(0.6).connect(reverb);
-  const padFilter = new Tone.Filter(1100, 'lowpass').fan(padGain, padSend);
+  const padLevel = new Tone.Gain(BASE_GAIN.pad * mixLevel('pad')).fan(padGain, padSend);
+  const padFilter = new Tone.Filter(1100, 'lowpass').connect(padLevel);
   const pad = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'fatsawtooth', count: 3, spread: 24 },
     envelope: { attack: 0.5, decay: 0.4, sustain: 0.8, release: 1.6 },
@@ -96,7 +114,7 @@ async function boot() {
 
   // 貝斯與鼓
   const bassIn = ctx.createGain();
-  const bassGain = new Tone.Gain(0.9).connect(master);
+  const bassGain = new Tone.Gain(BASE_GAIN.bass * mixLevel('bass')).connect(master);
   Tone.connect(bassIn, bassGain);
   const bassSynth = new Tone.MonoSynth({
     oscillator: { type: 'triangle' },
@@ -106,7 +124,7 @@ async function boot() {
   }).connect(bassGain);
 
   const drumsIn = ctx.createGain();
-  const drumGain = new Tone.Gain(0.8).connect(master);
+  const drumGain = new Tone.Gain(BASE_GAIN.drums * mixLevel('drums')).connect(master);
   const drumSend = new Tone.Gain(0.12).connect(reverb);
   Tone.connect(drumsIn, drumGain);
   drumGain.connect(drumSend);
@@ -116,15 +134,17 @@ async function boot() {
   const hatTone = new Tone.Filter(7500, 'highpass').connect(drumGain);
   const hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.045, sustain: 0 }, volume: -20 }).connect(hatTone);
 
+  const clickGain = new Tone.Gain(BASE_GAIN.click * mixLevel('click')).connect(master);
   const click = new Tone.Synth({
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.001, decay: 0.06, sustain: 0, release: 0.02 },
     volume: -6,
-  }).connect(master);
+  }).connect(clickGain);
 
   E = {
     ctx, master, reverb, guitarIn, fuzz, fuzzTone, chorus, guitarSend, synth, pad, padGain,
     droneGain, droneFilter, bassIn, bassSynth, drumsIn, kick, snare, hat, click,
+    levels: { drums: drumGain, bass: bassGain, pad: padLevel, click: clickGain },
     sampled: {}, bass: null, drums: null, droneOscs: [],
   };
   setState({ audioReady: true });
@@ -255,6 +275,8 @@ export async function setDrone(patch) {
 
 /* ───────── 節拍器 + 配樂(共用同一個時脈) ───────── */
 let loopId = null;
+let loopGen = 0; // 每次重新開始就加一,舊迴圈殘留的回呼靠它擋掉
+let lastTick = -1;
 let step = 0;
 let backing = null;
 
@@ -301,18 +323,36 @@ async function loadRhythmSection() {
   }
 }
 
-function drumHit(kind, time) {
+/** 合成音的排程時間一旦早於上一個音,Tone 會丟例外;單一個音出錯不能讓整個節拍停下來 */
+function safely(fn) {
+  try {
+    fn();
+  } catch (err) {
+    console.warn('略過一個音', err);
+  }
+}
+
+/** 節奏型裡的字元 → 力度倍率:X 重音、x 一般、o 輕 */
+const HIT_LEVEL = { X: 1.18, x: 1, o: 0.55 };
+
+function drumHit(kind, time, level = 1) {
   const useSamples = getState().drumKit === 'sampled' && E.drums?.ok;
   if (useSamples) {
-    E.drums.inst.start({ note: E.drums.map[kind], time, velocity: kind === 'hat' ? 70 : 105 });
-  } else if (kind === 'kick') E.kick.triggerAttackRelease(48, 0.3, time);
-  else if (kind === 'snare') E.snare.triggerAttackRelease(0.18, time);
-  else E.hat.triggerAttackRelease(0.04, time);
+    const velocity = Math.max(1, Math.min(127, Math.round((kind === 'hat' ? 70 : 105) * level)));
+    E.drums.inst.start({ note: E.drums.map[kind], time, velocity });
+  } else {
+    const velocity = Math.min(1, 0.85 * level * level);
+    safely(() => {
+      if (kind === 'kick') E.kick.triggerAttackRelease(48, 0.3, time, velocity);
+      else if (kind === 'snare') E.snare.triggerAttackRelease(0.18, time, velocity);
+      else E.hat.triggerAttackRelease(0.04, time, velocity);
+    });
+  }
 }
 
 function bassNote(midi, time, duration) {
   if (E.bass?.ok) E.bass.inst.start({ note: midi, time, duration, velocity: 100 });
-  else E.bassSynth.triggerAttackRelease(Tone.Frequency(midi, 'midi').toFrequency(), duration * 0.9, time, 0.8);
+  else safely(() => E.bassSynth.triggerAttackRelease(Tone.Frequency(midi, 'midi').toFrequency(), duration * 0.9, time, 0.8));
 }
 
 function tick(time) {
@@ -327,7 +367,7 @@ function tick(time) {
   if (pos % sig.beatEvery === 0) {
     const level = pos === 0 ? 2 : sig.accents.includes(pos) ? 1 : 0;
     const audible = counting || (b ? s.mix.click : s.metronomeOn);
-    if (audible) E.click.triggerAttackRelease(level === 2 ? 1568 : level === 1 ? 1175 : 880, 0.05, time, level === 2 ? 1 : 0.55);
+    if (audible) safely(() => E.click.triggerAttackRelease(level === 2 ? 1568 : level === 1 ? 1175 : 880, 0.05, time, level === 2 ? 1 : 0.55));
     const beat = pos / sig.beatEvery;
     Tone.getDraw().schedule(() => setState({ beat, beatLevel: level }), time);
   }
@@ -339,40 +379,72 @@ function tick(time) {
     if (pos === 0) {
       Tone.getDraw().schedule(() => setState({ backingBar: idx, backingCountIn: false }), time);
       if (s.mix.pad) E.pad.triggerAttackRelease(chord.padFreqs, barDur * 0.96, time, 0.5);
-      if (s.mix.guitar) chord.midis.forEach((m, i) => guitarNote(m, time + i * 0.028, barDur * 1.05, 78));
+      if (s.mix.guitar) {
+        const velocity = Math.max(1, Math.min(127, Math.round(78 * mixVelocity('guitar'))));
+        chord.midis.forEach((m, i) => guitarNote(m, time + i * 0.028, barDur * 1.05, velocity));
+      }
     }
     const p = b.pattern;
+    // Swing:反拍的八分音符往後推
+    const late = p.swing && pos % 4 === 2 ? p.swing * stepDur : 0;
+    const t = time + late;
     if (s.mix.drums) {
-      if (p.kick[pos] === 'x') drumHit('kick', time);
-      if (p.snare[pos] === 'x') drumHit('snare', time);
-      if (p.hat[pos] === 'x') drumHit('hat', time);
+      for (const kind of ['kick', 'snare', 'hat']) {
+        const level = HIT_LEVEL[p[kind][pos]];
+        if (level) drumHit(kind, t, level);
+      }
     }
     const bc = p.bass[pos];
-    if (s.mix.bass && bc && bc !== '.') {
+    if (s.mix.bass && bc && bc !== '.' && bc !== '-') {
       let len = 1;
       while (pos + len < sig.steps && p.bass[pos + len] === '.') len++;
-      const midi = chord.bassMidi + (bc === 'o' ? 12 : bc === '5' ? 7 : 0);
-      bassNote(midi, time, Math.min(len, 8) * stepDur * 0.95);
+      const up = bc === 'o' ? 12 : bc === '5' ? 7 : bc === '3' ? chord.third : bc === '7' ? chord.seventh : 0;
+      // 被往後推的音要縮短,才不會蓋到下一個音
+      bassNote(chord.bassMidi + up, t, (Math.min(len, 8) * stepDur - late) * 0.95);
     }
   }
   step++;
 }
 
+/** 換曲、換節奏、停止時:把合成貝斯已經排好的音收掉,不然下一個音會排在它的前面 */
+function releaseSynths() {
+  if (!E) return;
+  E.pad.releaseAll();
+  safely(() => {
+    const now = Tone.now();
+    E.bassSynth.envelope.cancel(now);
+    E.bassSynth.filterEnvelope.cancel(now);
+    E.bassSynth.triggerRelease(now);
+  });
+}
+function clearLoop() {
+  const T = Tone.getTransport();
+  loopGen++;
+  if (loopId !== null) T.clear(loopId);
+  loopId = null;
+  T.stop();
+  T.cancel();
+  releaseSynths();
+}
 function startTransport() {
   const T = Tone.getTransport();
-  T.stop();
-  T.cancel();
+  clearLoop();
   T.bpm.value = getState().bpm;
   step = 0;
-  loopId = T.scheduleRepeat(tick, '16n');
-  T.start('+0.08');
+  lastTick = -1;
+  // 播放中換曲或換節奏時,Tone 偶爾會留下舊迴圈的回呼,同一個十六分音符就會被算兩三次(聽起來變成兩三倍速)。
+  // 這裡只認「這一次開始的迴圈」,而且同一個時間點只算一次。
+  const gen = loopGen;
+  loopId = T.scheduleRepeat((time) => {
+    if (gen !== loopGen || time <= lastTick + 0.001) return;
+    lastTick = time;
+    tick(time);
+  }, '16n');
+  // 起點要晚於 Tone 已經預先排出去的音(預排約 0.1 秒)
+  T.start('+0.2');
 }
 function stopTransport() {
-  const T = Tone.getTransport();
-  T.stop();
-  T.cancel();
-  loopId = null;
-  if (E) E.pad.releaseAll();
+  clearLoop();
 }
 
 export function setBpm(bpm) {
@@ -397,7 +469,7 @@ export function setTimeSig(timeSig) {
 function prepareBacking(prog, styleId) {
   const pattern = CHORD_LAB.drumPatterns[styleId] || CHORD_LAB.drumPatterns[prog.style] || CHORD_LAB.drumPatterns.none;
   const bars = prog.bars.map((id) => {
-    const chord = CHORD_INDEX[id];
+    const chord = CHORD_BY_ID[id];
     const a = analyzeChord(chord);
     const bassChroma = Note.chroma(plain(chord.bass || chord.root));
     let bassMidi = 24 + bassChroma;
@@ -413,7 +485,11 @@ function prepareBacking(prog, styleId) {
       prev = m;
       return m;
     });
-    return { id, chord, midis: a.midis, bassMidi, padFreqs: padMidis.map((m) => Tone.Frequency(m, 'midi').toFrequency()) };
+    // 貝斯走音用:這個和弦的三度與七度(以貝斯音為準;沒有的話退回五度、高八度)
+    const fromBass = new Set(chromas.map((c) => (c - bassChroma + 12) % 12));
+    const third = fromBass.has(4) ? 4 : fromBass.has(3) ? 3 : 7;
+    const seventh = fromBass.has(10) ? 10 : fromBass.has(11) ? 11 : 12;
+    return { id, chord, midis: a.midis, bassMidi, third, seventh, padFreqs: padMidis.map((m) => Tone.Frequency(m, 'midi').toFrequency()) };
   });
   return { id: prog.id, bars, pattern, timeSig: pattern.timeSig || '4/4' };
 }
@@ -439,6 +515,19 @@ export function stopBacking() {
 
 export function setMix(patch) {
   setState({ mix: { ...getState().mix, ...patch } });
+}
+
+/** 調整各音軌的音量,patch 例如 { bass: 0.5 }(0–1) */
+export function setMixVolume(patch) {
+  setState({ mixVol: { ...getState().mixVol, ...patch } });
+  if (!E) return;
+  for (const id of Object.keys(patch)) {
+    const node = E.levels[id];
+    if (node) node.gain.rampTo(BASE_GAIN[id] * mixLevel(id), 0.05);
+  }
+}
+export function resetMixVolume() {
+  setMixVolume(Object.fromEntries(MIX_TRACKS.map((t) => [t.id, MIX_DEFAULT])));
 }
 
 export function setDrumKit(drumKit) {

@@ -72,8 +72,8 @@ export default function Home() {
           ))}
         </div>
         <div className="tool-grid">
-          <a className="tool-card" href="#/chords"><h3>和弦表</h3><p>選根音與類型,快速查各把位的指法</p></a>
-          <a className="tool-card" href="#/backing"><h3>配樂練習</h3><p>鼓、貝斯、鋪底,跟著和弦進行一起彈</p></a>
+          <a className="tool-card" href="#/chords"><h3>和弦表</h3><p>常用和弦一覽,也能用名稱、類型或音名搜尋</p></a>
+          <a className="tool-card" href="#/backing"><h3>配樂練習</h3><p>九十多段和弦進行,鼓、貝斯、鋪底各自調音量</p></a>
           <a className="tool-card" href="#/drone"><h3>Drone 持續音</h3><p>選一條空弦持續響著,在上面即興</p></a>
           <a className="tool-card" href="#/quiz"><h3>指板測驗</h3><p>隨機出音名,在指板上點出位置</p></a>
         </div>
