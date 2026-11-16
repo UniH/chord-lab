@@ -1,0 +1,11 @@
+const base = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
+export const IconPlay = () => (<svg {...base} fill="currentColor" stroke="none"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" /></svg>);
+export const IconStop = () => (<svg {...base} fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>);
+export const IconPause = () => (<svg {...base} fill="currentColor" stroke="none"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>);
+export const IconSliders = () => (<svg {...base}><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></svg>);
+export const IconCheck = () => (<svg {...base} strokeWidth="3"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>);
+export const IconArrow = () => (<svg {...base}><path d="M5 12h14M13 6l6 6-6 6" /></svg>);
+export const IconClose = () => (<svg {...base}><path d="M6 6l12 12M18 6 6 18" /></svg>);
+export const IconWave = () => (<svg {...base}><path d="M2 12c2.5 0 2.5-6 5-6s2.5 12 5 12 2.5-12 5-12 2.5 6 5 6" /></svg>);
+export const IconMetronome = () => (<svg {...base}><path d="M8 3h8l3 18H5L8 3Z" /><path d="M12 16 17 6" /></svg>);
+export const IconLoop = () => (<svg {...base}><path d="M17 2l4 4-4 4" /><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4" /><path d="M21 13v2a3 3 0 0 1-3 3H3" /></svg>);
