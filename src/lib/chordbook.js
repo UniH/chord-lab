@@ -1,6 +1,7 @@
 // 和弦表的資料整理與搜尋。和弦指型來自 @tombatossals/chords-db(用到時才載入)
-import { Chord, Key, Note } from 'tonal';
-import { KEYS, TUNING_MIDI, pretty } from './theory.js';
+import { Key, Note } from 'tonal';
+import { KEYS, TUNING_MIDI, parseFrets, parseFingers, pretty } from './theory.js';
+import { CHORD_FIXES } from '../data/chord-fixes.js';
 
 let dbPromise = null;
 export const loadChordDb = () => (dbPromise ||= import('@tombatossals/chords-db/lib/guitar.json').then((m) => m.default || m));
@@ -17,7 +18,8 @@ export const COMMON_GROUPS = [
   { title: 'sus 與 add9', note: '把三度換掉或再加一個音,瞪鞋與後搖很常用。', chords: ['Dsus2', 'Dsus4', 'Asus2', 'Asus4', 'Esus4', 'Cadd9', 'Gadd9', 'Aadd9'] },
 ];
 
-const TYPE_LABEL = { major: '大三和弦', minor: '小三和弦 m', '69': '6/9', mmaj7: 'm(maj7)', mmaj9: 'm(maj9)', mmaj11: 'm(maj11)', mmaj7b5: 'm(maj7)♭5', m69: 'm6/9' };
+// 資料庫裡的 alt 是降五度的大三和弦(不是爵士的 7alt),7sg 是 7/G,這裡換成看得懂的寫法
+const TYPE_LABEL = { major: '大三和弦', minor: '小三和弦 m', '69': '6/9', mmaj7: 'm(maj7)', mmaj9: 'm(maj9)', mmaj11: 'm(maj11)', mmaj7b5: 'm(maj7)♭5', m69: 'm6/9', madd9: 'm(add9)', alt: '(♭5)', '7sg': '7/G' };
 /** 類型按鈕上的文字 */
 export const typeLabel = (s) => pretty(TYPE_LABEL[s] || s);
 /** 接在根音後面的文字:major → ''、minor → 'm' */
@@ -56,7 +58,34 @@ const TYPE_WORDS = {
   mmaj9: ['mM9', 'm(maj9)'],
   '11': ['屬十一'],
   '13': ['屬十三'],
+  alt: ['b5', '(b5)', '-5', '降五'],
+  '7sg': ['7/G'],
 };
+
+/** 每個類型由哪些音組成(離根音幾個半音)。用音名反查、以及檢查指型有沒有按錯音都靠這張表 */
+export const TYPE_TONES = {
+  major: [0, 4, 7], minor: [0, 3, 7], dim: [0, 3, 6], dim7: [0, 3, 6, 9], aug: [0, 4, 8], alt: [0, 4, 6],
+  sus2: [0, 2, 7], sus4: [0, 5, 7], '7sus4': [0, 5, 7, 10],
+  '6': [0, 4, 7, 9], '69': [0, 2, 4, 7, 9], m6: [0, 3, 7, 9], m69: [0, 2, 3, 7, 9],
+  '7': [0, 4, 7, 10], '7b5': [0, 4, 6, 10], aug7: [0, 4, 8, 10], '7b9': [0, 1, 4, 7, 10], '7#9': [0, 3, 4, 7, 10], '7sg': [0, 4, 7, 10],
+  '9': [0, 2, 4, 7, 10], '9b5': [0, 2, 4, 6, 10], aug9: [0, 2, 4, 8, 10], '9#11': [0, 2, 4, 6, 7, 10],
+  '11': [0, 2, 4, 5, 7, 10], '13': [0, 2, 4, 5, 7, 9, 10],
+  maj7: [0, 4, 7, 11], maj7b5: [0, 4, 6, 11], 'maj7#5': [0, 4, 8, 11], maj9: [0, 2, 4, 7, 11], maj11: [0, 2, 4, 5, 7, 11], maj13: [0, 2, 4, 5, 7, 9, 11],
+  m7: [0, 3, 7, 10], m7b5: [0, 3, 6, 10], m9: [0, 2, 3, 7, 10], m11: [0, 2, 3, 5, 7, 10],
+  mmaj7: [0, 3, 7, 11], mmaj7b5: [0, 3, 6, 11], mmaj9: [0, 2, 3, 7, 11], mmaj11: [0, 2, 3, 5, 7, 11],
+  add9: [0, 2, 4, 7], madd9: [0, 2, 3, 7],
+};
+/** 某個和弦可以出現的音(0–11 的集合)。轉位和弦(/E、m/B)= 三和弦加上指定的低音;不認得的類型回傳 null */
+export function chordTones(root, suffix) {
+  const slash = suffix.match(/^(m?)\/(.+)$/);
+  const tones = slash ? TYPE_TONES[slash[1] ? 'minor' : 'major'] : TYPE_TONES[suffix];
+  if (!tones) return null;
+  const rootChroma = Note.chroma(root);
+  const set = new Set(tones.map((t) => (rootChroma + t) % 12));
+  if (slash) set.add(Note.chroma(slash[2]));
+  return set;
+}
+const FIXES = new Map(CHORD_FIXES.map(([root, suffix, n, was, frets, fingers]) => [`${root}|${suffix}|${n}`, { was, frets, fingers }]));
 
 const ENHARMONIC = { Db: 'C#', 'D#': 'Eb', Gb: 'F#', 'G#': 'Ab', 'A#': 'Bb', Cb: 'B', 'B#': 'C', Fb: 'E', 'E#': 'F' };
 const clean = (text) =>
@@ -113,18 +142,26 @@ export function parseChord(db, text) {
   return db.suffixes.includes(suffix) ? { root: parts.root, suffix } : null;
 }
 
-/** 資料庫裡某個和弦的所有指型,整理成和弦圖吃的格式 */
+/** 資料庫裡某個和弦的所有指型,整理成和弦圖吃的格式(會先套用 chord-fixes.js 的更正) */
 export function dbVoicings(db, root, suffix) {
   const entry = (db.chords[root.replace('#', 'sharp')] || []).find((c) => c.suffix === suffix);
   if (!entry) return [];
-  return entry.positions.map((p, i) => ({
-    id: `db-${root}-${suffix}-${i}`,
-    name: chordName(root, suffix),
-    label: `指型 ${i + 1}`,
-    frets: p.frets.map((f) => (f < 0 ? null : f === 0 ? 0 : f + p.baseFret - 1)),
-    fingers: p.fingers,
-    root,
-  }));
+  const allowed = chordTones(root, suffix);
+  const list = [];
+  entry.positions.forEach((p, i) => {
+    let frets = p.frets.map((f) => (f < 0 ? null : f === 0 ? 0 : f + p.baseFret - 1));
+    let fingers = p.fingers;
+    const fix = FIXES.get(`${root}|${suffix}|${i + 1}`);
+    if (fix && fix.was === frets.map((f) => f ?? 'x').join(' ')) {
+      if (fix.frets === null) return;
+      frets = parseFrets(fix.frets);
+      fingers = parseFingers(fix.fingers);
+    }
+    // 最後一道防線:還是有和弦以外的音的指型不顯示(套件更新後出現新的錯誤時)
+    if (allowed && frets.some((f, s) => f !== null && !allowed.has((TUNING_MIDI[s] + f) % 12))) return;
+    list.push({ id: `db-${root}-${suffix}-${i}`, name: chordName(root, suffix), label: `指型 ${list.length + 1}`, frets, fingers, root });
+  });
+  return list;
 }
 /** 最常用的那一個指型 */
 export function dbVoicing(db, root, suffix, extra = {}) {
@@ -133,31 +170,14 @@ export function dbVoicing(db, root, suffix, extra = {}) {
 }
 
 /* ───────── 用音名反查 ───────── */
-const TONAL_SYMBOL = { major: 'M', minor: 'm', aug7: '7#5', aug9: '9#5', mmaj7: 'mM7', mmaj9: 'mM9', add9: 'Madd9' };
-const tonesCache = new Map();
-/** 某個和弦的組成音(0–11 的集合) */
-function chordTones(db, root, suffix) {
-  const id = `${root}|${suffix}`;
-  if (!tonesCache.has(id)) {
-    const notes = Chord.get(root + (TONAL_SYMBOL[suffix] ?? suffix)).notes;
-    let tones = new Set(notes.map((n) => Note.chroma(n)));
-    if (!tones.size) {
-      // tonal 不認得的類型,改從指型裡的音算
-      tones = new Set(dbVoicings(db, root, suffix).flatMap((v) => v.frets.map((f, i) => (f === null ? null : (TUNING_MIDI[i] + f) % 12)).filter((x) => x !== null)));
-    }
-    tonesCache.set(id, tones);
-  }
-  return tonesCache.get(id);
-}
-
 function searchByNotes(db, keys) {
   const wanted = new Set(keys.map((k) => Note.chroma(k)));
   const found = [];
   for (const root of KEYS) {
     for (const suffix of db.suffixes) {
       if (suffix.includes('/')) continue;
-      const tones = chordTones(db, root, suffix);
-      if (tones.size < wanted.size || ![...wanted].every((c) => tones.has(c))) continue;
+      const tones = chordTones(root, suffix);
+      if (!tones || tones.size < wanted.size || ![...wanted].every((c) => tones.has(c))) continue;
       found.push({ root, suffix, extra: tones.size - wanted.size, first: root === keys[0] ? 0 : 1 });
     }
   }

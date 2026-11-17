@@ -34,6 +34,14 @@
 - 配樂的分類在 `progressionCats`,節奏型在 `drumPatterns`(寫法見檔案裡的註解)
 - 課表在同一個檔案的 `plan`
 
+改完資料後可以跑一次檢查,確認每個指型按出來都是那個和弦、配樂的每個小節都找得到和弦:
+
+```bash
+npm run check
+```
+
+和弦表的指型來自 chords-db。資料庫裡有四十幾個指型是錯的(例如整組 Em(add9) 被誤植成 Fm(add9)),更正列在 [`src/data/chord-fixes.js`](src/data/chord-fixes.js),顯示前會自動套用。
+
 ## 本機開發
 
 需要 Node.js 20 以上。
