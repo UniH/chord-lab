@@ -48,7 +48,7 @@ export default function Home() {
   return (
     <div className="page">
       <section className="hero">
-        <p className="eyebrow">Psychedelic · Shoegaze · Post-rock</p>
+        <p className="eyebrow">Guitar Chord Practice</p>
         <h1 data-text="Chord Lab">Chord Lab</h1>
         <p className="lead">從封閉和弦出發,用八週把和弦語彙擴充到整條指板:CAGED、三和弦轉位、色彩和弦、空弦持續音。</p>
         <div className="hero-progress">

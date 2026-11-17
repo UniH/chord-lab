@@ -15,7 +15,7 @@ export const COMMON_GROUPS = [
   { title: '封閉和弦', note: '食指橫按,整個指型可以平移到任何一格。', chords: ['F', 'B', 'Bb', 'Bm', 'F#m', 'C#m', 'Cm', 'Gm'] },
   { title: '屬七和弦', note: '藍調與搖滾的基本色彩。', chords: ['A7', 'B7', 'C7', 'D7', 'E7', 'G7'] },
   { title: '大七與小七', note: '比三和弦柔一點、飄一點。', chords: ['Cmaj7', 'Dmaj7', 'Fmaj7', 'Gmaj7', 'Amaj7', 'Am7', 'Dm7', 'Em7', 'Bm7'] },
-  { title: 'sus 與 add9', note: '把三度換掉或再加一個音,瞪鞋與後搖很常用。', chords: ['Dsus2', 'Dsus4', 'Asus2', 'Asus4', 'Esus4', 'Cadd9', 'Gadd9', 'Aadd9'] },
+  { title: 'sus 與 add9', note: '把三度換掉或再加一個音,聲音比三和弦更開闊。', chords: ['Dsus2', 'Dsus4', 'Asus2', 'Asus4', 'Esus4', 'Cadd9', 'Gadd9', 'Aadd9'] },
 ];
 
 // 資料庫裡的 alt 是降五度的大三和弦(不是爵士的 7alt),7sg 是 7/G,這裡換成看得懂的寫法
