@@ -1617,3 +1617,82 @@ a.chip {
   width: 12px;
   height: 12px;
 }
+
+/* ───────── 工具列的配樂播放鍵與混音器 ───────── */
+.btn-transport svg {
+  width: 20px;
+  height: 20px;
+}
+.dock-track {
+  display: flex;
+  flex-direction: column;
+  max-width: 190px;
+  line-height: 1.3;
+  color: var(--text);
+  text-decoration: none;
+}
+.dock-track small {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.dock-track span {
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dock-track:hover span {
+  color: var(--periwinkle);
+}
+.sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sheet h4 {
+  font-size: 15.5px;
+}
+.sheet-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sheet-now p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.sheet .mixer {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 900px) {
+  .dock-track {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  /* 手機的工具列放不下選弦的選單,改到混音器裡選 */
+  .dock-drone {
+    display: none;
+  }
+}
+@media (max-width: 360px) {
+  .dock {
+    gap: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .dock .btn-round,
+  .dock .btn-icon {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+  .dock .btn-step {
+    width: 30px;
+  }
+  .dock .bpm-value {
+    min-width: 40px;
+  }
+}

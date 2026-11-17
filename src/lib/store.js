@@ -6,7 +6,7 @@ const PREFS_VERSION = 2;
 const PERSISTED = [
   'prefsVersion', 'bpm', 'timeSig', 'voice', 'reverb', 'chorus', 'fuzz', 'volume',
   'droneString', 'droneFifth', 'droneLow', 'droneVolume', 'droneMode',
-  'labelMode', 'playMode', 'mix', 'mixVol', 'drumKit',
+  'labelMode', 'playMode', 'mix', 'mixVol', 'drumKit', 'backingSel', 'backingStyle',
 ];
 export const MIX_DEFAULT = 0.7; // 推桿在 70% 時是原本的音量
 
@@ -54,6 +54,8 @@ let state = {
   playMode: 'strum', // strum | arp
   mix: { drums: true, bass: true, pad: true, guitar: false, click: false }, // 各音軌的開關
   drumKit: 'sampled',
+  backingSel: null, // 目前選的配樂 id(null = 第一首)
+  backingStyle: null, // 目前選的節奏(null = 那首配樂預設的節奏)
   ...savedPrefs,
   // 各音軌的音量(0–1),舊紀錄裡沒有的音軌補上預設值
   mixVol: { drums: MIX_DEFAULT, bass: MIX_DEFAULT, pad: MIX_DEFAULT, guitar: MIX_DEFAULT, click: MIX_DEFAULT, ...(savedPrefs.mixVol || {}) },
@@ -65,9 +67,11 @@ let state = {
   beat: -1,
   beatLevel: 0,
   droneOn: false,
-  backingId: null,
+  backingId: null, // 正在播放(或暫停中)的配樂 id
+  backingPaused: false,
   backingBar: -1,
   backingCountIn: false,
+  mixerOpen: false,
 };
 
 const listeners = new Set();

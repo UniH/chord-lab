@@ -3,9 +3,10 @@ import { CHORD_LAB } from '../data/chords.js';
 import ChordCard from '../components/ChordCard.jsx';
 import { LabelToolbar } from './Unit.jsx';
 import { useStore } from '../lib/store.js';
-import { startBacking, stopBacking, setBpm, setMix, setMixVolume, resetMixVolume, setDrumKit, MIX_TRACKS } from '../lib/audio.js';
+import { toggleBacking, stopBacking, selectBacking, setBackingStyle, selectedBacking, setBpm } from '../lib/audio.js';
 import { CHORD_BY_ID } from '../lib/theory.js';
-import { IconPlay, IconStop } from '../components/Icons.jsx';
+import { openMixer } from '../components/Mixer.jsx';
+import { IconPlay, IconPause, IconStop, IconSliders } from '../components/Icons.jsx';
 
 const PROGS = CHORD_LAB.progressions;
 const STYLES = CHORD_LAB.drumPatterns;
@@ -14,14 +15,15 @@ const countIn = (cat) => PROGS.filter((p) => p.cat === cat).length;
 
 export default function Backing({ id }) {
   const s = useStore();
-  const [selected, setSelected] = useState(PROGS.find((p) => p.id === id)?.id || PROGS[0].id);
-  const prog = PROGS.find((p) => p.id === selected);
+  // 選了哪一首、哪個節奏存在全站狀態裡,底部工具列的播放鍵才知道要播什麼
+  const { prog, style } = selectedBacking();
+  const selected = prog.id;
   const [cat, setCat] = useState(prog.cat);
-  const [style, setStyle] = useState(prog.style);
-  const playing = s.backingId === prog.id;
+  const active = !!s.backingId; // 播放中或暫停中
+  const playing = active && !s.backingPaused;
   const bars = prog.bars.map((cid) => CHORD_BY_ID[cid]);
   const shown = cat === 'all' ? PROGS : PROGS.filter((p) => p.cat === cat);
-  const barIdx = playing ? s.backingBar : -1;
+  const barIdx = active ? s.backingBar : -1;
   const current = bars[barIdx >= 0 ? barIdx : 0];
   const nextIdx = ((barIdx >= 0 ? barIdx : 0) + 1) % bars.length;
   // 下一個「不同」的和弦
@@ -31,36 +33,29 @@ export default function Backing({ id }) {
     if (c.id !== current.id) { upcoming = c; break; }
   }
 
+  // 從別頁的連結進來(#/backing/某一首):換到那一首,已經是那一首就不打斷播放
   useEffect(() => {
-    if (id && PROGS.some((p) => p.id === id)) {
-      pick(id);
-      setCat(PROGS.find((p) => p.id === id).cat);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const target = id && PROGS.find((p) => p.id === id);
+    if (!target) return;
+    if (target.id !== selectedBacking().prog.id) selectBacking(target.id);
+    setCat(target.cat);
   }, [id]);
+  // 沒有在播的時候進到這一頁,速度換成這一首預設的
   useEffect(() => {
-    setBpm(prog.bpm);
-    return () => stopBacking();
+    if (!s.backingId) setBpm(selectedBacking().prog.bpm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function pick(pid) {
-    const p = PROGS.find((x) => x.id === pid);
-    setSelected(pid);
-    setStyle(p.style);
-    setBpm(p.bpm);
-    if (s.backingId) startBacking(p, p.style);
-  }
+  const pick = selectBacking;
   function pickRandom() {
     const pool = shown.filter((p) => p.id !== selected);
     if (pool.length) pick(pool[Math.floor(Math.random() * pool.length)].id);
   }
-  function changeStyle(v) {
-    setStyle(v);
-    if (playing) startBacking(prog, v);
-  }
-  const kitNote =
-    s.drumKit !== 'sampled' ? '' : s.drumStatus === 'loading' ? '鼓組取樣下載中,先用合成鼓…' : s.drumStatus === 'failed' ? '鼓組取樣載入失敗,目前使用合成鼓' : '';
+  const status = !active
+    ? '按「開始播放」後會先數一小節預備拍'
+    : s.backingCountIn
+      ? (s.backingPaused ? '已暫停(預備拍)' : '預備拍…')
+      : `${s.backingPaused ? '已暫停 · ' : ''}第 ${barIdx + 1} 小節`;
 
   return (
     <div className="page">
@@ -99,10 +94,13 @@ export default function Backing({ id }) {
           <p>{prog.desc}</p>
         </div>
         <div className="player-main">
-          <button className={`btn btn-primary btn-lg${playing ? ' is-on' : ''}`} onClick={() => (playing ? stopBacking() : startBacking(prog, style))}>
-            {playing ? <IconStop /> : <IconPlay />}
-            {playing ? '停止' : '開始播放'}
+          <button className={`btn btn-primary btn-lg${playing ? ' is-on' : ''}`} onClick={toggleBacking}>
+            {playing ? <IconPause /> : <IconPlay />}
+            {playing ? '暫停' : active ? '繼續播放' : '開始播放'}
           </button>
+          {active && (
+            <button className="btn btn-ghost" onClick={stopBacking}><IconStop /> 回到開頭</button>
+          )}
           <div className="bpm">
             <button className="btn btn-ghost btn-step" onClick={() => setBpm(s.bpm - 4)} aria-label="減慢">−</button>
             <div className="bpm-value"><strong>{s.bpm}</strong><span>BPM</span></div>
@@ -110,36 +108,12 @@ export default function Backing({ id }) {
           </div>
           <label className="select-inline">
             <span>節奏</span>
-            <select value={style} onChange={(e) => changeStyle(e.target.value)}>
+            <select value={style} onChange={(e) => setBackingStyle(e.target.value)}>
               {Object.entries(STYLES).map(([k, v]) => (<option key={k} value={k}>{v.name}</option>))}
             </select>
           </label>
-          <label className="select-inline">
-            <span>鼓組</span>
-            <select value={s.drumKit} onChange={(e) => setDrumKit(e.target.value)}>
-              <option value="sampled">取樣鼓機</option>
-              <option value="synth">合成鼓</option>
-            </select>
-          </label>
+          <button className="btn btn-ghost" onClick={openMixer}><IconSliders /> 混音器</button>
         </div>
-        <div className="mixer" role="group" aria-label="混音:各音軌的開關與音量">
-          {MIX_TRACKS.map((t) => {
-            const on = !!s.mix[t.id];
-            const vol = Math.round((s.mixVol[t.id] ?? 0.7) * 100);
-            return (
-              <div key={t.id} className={`mixer-row${on ? '' : ' is-off'}`}>
-                <label className={`toggle${on ? ' is-on' : ''}`}>
-                  <input type="checkbox" checked={on} onChange={(e) => setMix({ [t.id]: e.target.checked })} />
-                  {t.name}
-                </label>
-                <input type="range" min="0" max="100" step="1" value={vol} aria-label={`${t.name}音量`} onChange={(e) => setMixVolume({ [t.id]: Number(e.target.value) / 100 })} />
-                <output>{vol}%</output>
-              </div>
-            );
-          })}
-          <button className="btn btn-ghost mixer-reset" onClick={resetMixVolume}>音量還原</button>
-        </div>
-        {kitNote && <p className="hint">{kitNote}</p>}
 
         <div className="bars" aria-label="小節">
           {bars.map((c, i) => (
@@ -149,9 +123,7 @@ export default function Backing({ id }) {
             </span>
           ))}
         </div>
-        <p className="now-status" role="status">
-          {playing ? (s.backingCountIn ? '預備拍…' : `第 ${barIdx + 1} 小節`) : '按「開始播放」後會先數一小節預備拍'}
-        </p>
+        <p className="now-status" role="status">{status}</p>
       </section>
 
       <LabelToolbar showPlayMode={false} />
@@ -173,7 +145,8 @@ export default function Backing({ id }) {
         <ol className="steps">
           <li><b>先慢。</b>把速度降到原本的七成,確定每次換和弦都在第一拍到位。</li>
           <li><b>換彈法。</b>同一段進行,第一輪刷弦,第二輪分解,第三輪只彈上三弦。</li>
-          <li><b>調整混音。</b>點音軌名稱可以開關,拉桿調各自的音量。關掉鋪底只留鼓和貝斯,和弦的顏色就完全靠你。</li>
+          <li><b>調整混音。</b>按「混音器」(底部工具列最右邊也有)可以開關每個音軌、調各自的音量。關掉鋪底只留鼓和貝斯,和弦的顏色就完全靠你。</li>
+          <li><b>邊播邊查。</b>播放鍵在底部工具列也有一個,切到和弦表或其他單元時配樂不會停。</li>
           <li><b>開「吉他示範」對答案。</b>不確定自己按得對不對時,打開來聽聽看是不是同一個聲音。</li>
         </ol>
         <p className="hint">想加自己的進行:打開 <code>src/data/chords.js</code>,在 <code>progressions</code> 裡照格式新增一筆就會出現在這裡;常見和弦在同一個檔案的 <code>library</code>。</p>

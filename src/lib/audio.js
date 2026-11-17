@@ -456,6 +456,8 @@ export function setBpm(bpm) {
 export async function setMetronome(on) {
   await ensureAudio();
   setState({ metronomeOn: on, beat: -1 });
+  // 配樂暫停中時脈是停的,這時開節拍器就把配樂收掉,讓節拍器自己走
+  if (on && getState().backingPaused) return stopBacking();
   if (on && loopId === null) startTransport();
   if (!on && !backing) stopTransport();
   syncWakeLock();
@@ -494,23 +496,82 @@ function prepareBacking(prog, styleId) {
   return { id: prog.id, bars, pattern, timeSig: pattern.timeSig || '4/4' };
 }
 
-export async function startBacking(prog, styleId) {
+/** 目前選的配樂與節奏。沒選過、或存下來的 id 已經不存在時,用第一首 */
+export function selectedBacking() {
+  const s = getState();
+  const list = CHORD_LAB.progressions;
+  const prog = list.find((p) => p.id === s.backingSel) || list[0];
+  const style = s.backingSel === prog.id && CHORD_LAB.drumPatterns[s.backingStyle] ? s.backingStyle : prog.style;
+  return { prog, style };
+}
+
+/** 從頭播放目前選的配樂(先數一小節預備拍) */
+export async function startBacking() {
   await ensureAudio();
   loadRhythmSection();
-  backing = prepareBacking(prog, styleId);
-  setState({ backingId: prog.id, backingBar: -1, backingCountIn: true, beat: -1 });
+  const { prog, style } = selectedBacking();
+  if (getState().backingSel !== prog.id) {
+    // 還沒選過配樂就直接按了播放:記下這一首,速度用它預設的
+    setState({ backingSel: prog.id, backingStyle: style });
+    setBpm(prog.bpm);
+  }
+  backing = prepareBacking(prog, style);
+  setState({ backingId: prog.id, backingPaused: false, backingBar: -1, backingCountIn: true, beat: -1 });
   startTransport();
   syncWakeLock();
 }
 
+/** 暫停:停在目前的位置,再按播放會從同一個地方接下去 */
+export function pauseBacking() {
+  if (!E || !backing || getState().backingPaused) return;
+  Tone.getTransport().pause();
+  releaseSynths();
+  stopGuitar();
+  setState({ backingPaused: true, beat: -1 });
+  syncWakeLock();
+}
+async function resumeBacking() {
+  await ensureAudio();
+  Tone.getTransport().start('+0.1');
+  setState({ backingPaused: false });
+  syncWakeLock();
+}
+/** 工具列與配樂頁的播放/暫停鍵 */
+export function toggleBacking() {
+  const s = getState();
+  if (!s.backingId || !backing) return startBacking();
+  return s.backingPaused ? resumeBacking() : pauseBacking();
+}
+
+/** 停止並回到開頭 */
 export function stopBacking() {
   backing = null;
-  setState({ backingId: null, backingBar: -1, backingCountIn: false, beat: -1 });
+  setState({ backingId: null, backingPaused: false, backingBar: -1, backingCountIn: false, beat: -1 });
   if (!E) return;
   stopGuitar();
   if (getState().metronomeOn) startTransport();
   else stopTransport();
   syncWakeLock();
+}
+
+/** 換了配樂或節奏之後:正在播放就從頭播新的,暫停中就回到開頭 */
+function applyBackingChange() {
+  const s = getState();
+  if (!s.backingId) return;
+  if (s.backingPaused) stopBacking();
+  else startBacking();
+}
+/** 選一首配樂:節奏與速度換成那一首預設的 */
+export function selectBacking(id) {
+  const prog = CHORD_LAB.progressions.find((p) => p.id === id);
+  if (!prog) return;
+  setState({ backingSel: prog.id, backingStyle: prog.style });
+  setBpm(prog.bpm);
+  applyBackingChange();
+}
+export function setBackingStyle(style) {
+  setState({ backingSel: selectedBacking().prog.id, backingStyle: style });
+  applyBackingChange();
 }
 
 export function setMix(patch) {
@@ -539,7 +600,7 @@ export function setDrumKit(drumKit) {
 let wakeLock = null;
 async function syncWakeLock() {
   const s = getState();
-  const active = s.metronomeOn || s.droneOn || !!s.backingId;
+  const active = s.metronomeOn || s.droneOn || (!!s.backingId && !s.backingPaused);
   try {
     if (active && !wakeLock && 'wakeLock' in navigator) {
       wakeLock = await navigator.wakeLock.request('screen');
