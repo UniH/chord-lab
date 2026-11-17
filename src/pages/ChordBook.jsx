@@ -196,7 +196,10 @@ function ChordDetail({ db, root, suffix }) {
   );
 }
 
-export default function ChordBook({ name = '' }) {
+export default function ChordBook({ name: routeName = '' }) {
+  // #/chords/key 是「依調性」這個分頁的網址,不是和弦名稱
+  const keyView = routeName === 'key';
+  const name = keyView ? '' : routeName;
   const [db, setDb] = useState(null);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
@@ -207,6 +210,9 @@ export default function ChordBook({ name = '' }) {
   }, []);
   // 點了任何一個和弦(網址換了)就把搜尋清掉
   useEffect(() => setQuery(''), [name]);
+  useEffect(() => {
+    if (keyView) setView('key');
+  }, [keyView]);
 
   const result = useMemo(() => (db && query.trim() ? searchChords(db, query) : null), [db, query]);
   const picked = useMemo(() => (db && name ? parseChord(db, name) : null), [db, name]);

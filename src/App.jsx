@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CHORD_LAB } from './data/chords.js';
 import Home from './pages/Home.jsx';
+import Plan from './pages/Plan.jsx';
 import Unit from './pages/Unit.jsx';
 import DronePage from './pages/DronePage.jsx';
 import Backing from './pages/Backing.jsx';
@@ -31,12 +32,13 @@ function safeDecode(text) {
 }
 
 const NAV = [
-  { to: '', label: '課表' },
+  { to: '', label: '首頁' },
   ...CHORD_LAB.units.map((u) => ({ to: `unit/${u.id}`, label: u.title, no: u.no })),
   { to: 'chords', label: '和弦表' },
   { to: 'backing', label: '配樂' },
   { to: 'drone', label: 'Drone' },
   { to: 'quiz', label: '測驗' },
+  { to: 'plan', label: '課表' },
 ];
 
 export default function App() {
@@ -48,6 +50,7 @@ export default function App() {
   else if (head === 'drone') page = <DronePage />;
   else if (head === 'backing') page = <Backing id={arg} />;
   else if (head === 'quiz') page = <Quiz />;
+  else if (head === 'plan') page = <Plan />;
   else if (head === 'chords') page = <ChordBook name={safeDecode(arg)} />;
   else page = <Home />;
 
